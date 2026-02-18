@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment
+.env
+.venv/
+env/
+
+# API keys - NEVER commit these
+*api_key*
+*secret*
+
+# Logs (generated at runtime)
+*_logs/
+*.jsonl
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ROS build artifacts
+devel/
+build/
+logs/
