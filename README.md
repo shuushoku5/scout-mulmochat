@@ -1,213 +1,217 @@
-﻿# SCOUT × MulmoChat
+﻿# SCOUT x MulmoChat
 
-**対話型ロボット運用インタフェース — GUI Chat Protocol for Robot Operation**
+**Conversational Robot Operation Interface -- GUI Chat Protocol for Robot Operation**
 
-LLMの対話の中にカメラ画像・状態パネル・選択肢フォームがインラインで出現する、新しいロボット運用UIの実装です。
+[日本語版はこちら / Japanese version](docs/README_ja.md)
+
+A novel robot operation UI where camera images, status panels, and decision forms appear inline within LLM chat conversations.
 
 <p align="center">
   <img src="docs/images/screenshot_status.png" width="400" alt="Status Panel" />
   <img src="docs/images/screenshot_action.png" width="400" alt="Action Result" />
 </p>
 
-## 概要
+## Overview
 
-巡回ロボット（[Moorebot Scout](https://www.moorebot.com/)）を、自然言語で対話しながら操作・監視するシステムです。
+An interactive system for operating and monitoring a patrol robot ([Moorebot Scout](https://www.moorebot.com/)) through natural language conversation.
 
-**従来のロボット運用UIの課題:**
-- ダッシュボード型: 異常時にログを読み、別画面で操作 → 状況把握に時間がかかる
-- LLMテキストのみ: 対話はできるがUI表示がない → 画像比較や構造化された選択ができない
+**Problems with conventional robot operation UIs:**
+- Dashboard-based: When anomalies occur, operators must read logs and switch between screens, slowing situation awareness
+- LLM text-only: Conversation works, but there's no structured UI -- no image comparison, no clickable choices
 
-**本システムのアプローチ: GUI Chat Protocol**
+**Our approach: GUI Chat Protocol**
 
-[MulmoChat](https://github.com/receptron/MulmoChat) の GUI Chat Protocol の思想を応用し、LLMの function call を拡張します。各ツールの実行結果が **「LLMへのテキスト」＋「UIへのリッチデータ」** の2種類を同時に返すことで、チャットの流れを壊さずにカメラ画像・状態パネル・操作ボタンがインラインで出現します。
-
-```
-ユーザー: 「状態を見せて」
-    ↓
-LLM → function call: getScoutStatus()
-    ↓
-ツール実行 → 2種類のデータを返す:
-  ├── llm_text: "status=idle, position=x:1.2 y:4.5"  → LLMの次の判断材料
-  └── gui_data: {type:"status_panel", image:..., odom:...}  → UIにパネル表示
-    ↓
-チャット内にカメラ画像＋状態テーブルが出現 + LLMが自然言語で解説
-```
-
-## 特徴
-
-- **対話とUIの統合** — カメラ画像・状態パネル・選択肢がチャット内にインライン表示される
-- **LLMは判断のみ** — 制御はすべてROS Service経由。LLMが暴走してもロボットは安全
-- **LLM非依存** — Claude / GPT / Ollama 等に差し替え可能（`llm_client.py` のみ変更）
-- **軽量** — Python + Flask。Python 3.8+で動作
-- **構造化ログ** — 全操作がJSON Lines形式で記録され、研究評価に直結
-- **拡張容易** — ツール定義を追加するだけで新機能が使える
-
-## アーキテクチャ
+Inspired by the GUI Chat Protocol concept from [MulmoChat](https://github.com/receptron/MulmoChat), we extend LLM function calls so that each tool returns **two types of data simultaneously**: text for the LLM's reasoning and rich GUI data for the UI. This allows camera images, status panels, and action buttons to appear inline without breaking the conversation flow.
 
 ```
-┌──────────────────────────────────────────────┐
-│  Operator (Browser)                          │
-│  チャット入力 → GUIパネル表示                   │
-└──────────────┬───────────────────────────────┘
-               │ HTTP
-┌──────────────▼───────────────────────────────┐
-│  app_flask.py  (Flask Server)                │
-│  HTML/JS が gui_data をインラインレンダリング     │
-└──────────────┬───────────────────────────────┘
-               │
-┌──────────────▼───────────────────────────────┐
-│  llm_client.py  (Claude API / tool_use loop) │
-│  ユーザー発話 → LLM → function call → 繰り返し  │
-└──────────────┬───────────────────────────────┘
-               │ function call
-┌──────────────▼───────────────────────────────┐
-│  tool_executor.py  ★ GUI Chat Protocol 核心   │
-│  ツール実行 → { llm_text + gui_data } を返す    │
-└──────────────┬───────────────────────────────┘
-               │
-┌──────────────▼───────────────────────────────┐
-│  ros_client.py  (rospy)                      │
-│  /UtilNode/algo_move, algo_action            │
-│  /NavPathNode/nav_path_start, nav_list_path  │
-└──────────────┬───────────────────────────────┘
-               │ ROS Service Call
-┌──────────────▼───────────────────────────────┐
-│  SCOUT (Moorebot Scout / roller_eye ROS)     │
-│  Camera, Odom, Motors, Sensors               │
-└──────────────────────────────────────────────┘
+User: "Show me the status"
+    |
+LLM -> function call: getScoutStatus()
+    |
+Tool execution -> Returns 2 types of data:
+  |-- llm_text: "status=idle, position=x:1.2 y:4.5"  -> LLM's next reasoning input
+  |-- gui_data: {type:"status_panel", image:..., odom:...}  -> Rendered as UI panel
+    |
+Camera image + status table appears in chat + LLM explains in natural language
 ```
 
-## デモ
+## Key Features
 
-| 入力 | 動作 |
+- **Unified conversation and UI** -- Camera images, status panels, and decision forms appear inline in chat
+- **LLM decides, ROS executes** -- All control goes through ROS Services. Even if the LLM hallucinates, the robot stays safe
+- **LLM-agnostic** -- Swap Claude / GPT / Ollama by changing only `llm_client.py`
+- **Lightweight** -- Python + Flask, runs on Python 3.8+
+- **Structured logging** -- All interactions recorded in JSON Lines format for research evaluation
+- **Easily extensible** -- Add new capabilities just by defining new tools
+
+## Architecture
+
+```
++----------------------------------------------+
+|  Operator (Browser)                          |
+|  Chat input -> GUI panel rendering           |
++--------------+-------------------------------+
+               | HTTP
++--------------v-------------------------------+
+|  app_flask.py  (Flask Server)                |
+|  HTML/JS renders gui_data inline             |
++--------------+-------------------------------+
+               |
++--------------v-------------------------------+
+|  llm_client.py  (Claude API / tool_use loop) |
+|  User message -> LLM -> function call -> loop|
++--------------+-------------------------------+
+               | function call
++--------------v-------------------------------+
+|  tool_executor.py  * GUI Chat Protocol core  |
+|  Execute tool -> { llm_text + gui_data }     |
++--------------+-------------------------------+
+               |
++--------------v-------------------------------+
+|  ros_client.py  (rospy)                      |
+|  /UtilNode/algo_move, algo_action            |
+|  /NavPathNode/nav_path_start, nav_list_path  |
++--------------+-------------------------------+
+               | ROS Service Call
++--------------v-------------------------------+
+|  SCOUT (Moorebot Scout / roller_eye ROS)     |
+|  Camera, Odom, Motors, Sensors               |
++----------------------------------------------+
+```
+
+## Demo
+
+| Input | Action |
 |---|---|
-| 「状態を見せて」 | 📡 カメラ画像＋位置＋速度＋Nav状態のパネル表示 |
-| 「0.2m前進して」 | ✅ Before/After画像比較付きの移動結果表示 |
-| 「右に30度回って」 | ✅ algo_action実行＋結果パネル |
-| 「ルート一覧を見せて」 | 📋 登録済みパトロールルートのクリック可能リスト |
-| 「巡回して」 | 🚶 パトロール開始＋進捗パネル |
-| 異常発生時 | 🤔 LLMが自動的に選択肢フォームを生成・提示 |
+| "Show me the status" | Camera image + position + speed + Nav state panel |
+| "Move forward 0.2m" | Before/After image comparison with move result |
+| "Turn right 30 degrees" | algo_action execution + result panel |
+| "Show patrol routes" | Clickable list of registered patrol routes |
+| "Start patrol" | Patrol start + progress panel |
+| On anomaly | LLM automatically generates and presents decision form |
 
-## セットアップ
+## Setup
 
-### 必要なもの
+### Requirements
 
-- Moorebot Scout（ROS接続済み）
-- PC（Ubuntu, ROS Noetic, Python 3.8+）
-- Anthropic API キー（[取得方法](https://console.anthropic.com/)）
+- Moorebot Scout (ROS-connected)
+- PC (Ubuntu, ROS Noetic, Python 3.8+)
+- Anthropic API key ([get one here](https://console.anthropic.com/))
 
-### インストール
+### Installation
 
 ```bash
 git clone https://github.com/YOUR_USERNAME/scout-mulmochat.git
 cd scout-mulmochat
 
-pip3 install anthropic flask
+pip3 install -r requirements.txt
 ```
 
-### モックモードで動作確認（ROS不要）
+### Mock mode (no ROS required)
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-your-key
 python3 app_flask.py --mock
-# ブラウザで http://localhost:7860
+# Open http://localhost:7860 in browser
 ```
 
-### 実機接続
+### Connect to real robot
 
 ```bash
-# ROS環境が設定されたターミナルで
+# In a terminal with ROS environment configured
 export ROS_MASTER_URI=http://<SCOUT_IP>:11311
 export ANTHROPIC_API_KEY=sk-ant-your-key
 python3 app_flask.py
 ```
 
-## ファイル構成
+## File Structure
 
 ```
 scout-mulmochat/
-├── app_flask.py          # Flask チャットUI + GUIレンダリング（メインエントリ）
-├── llm_client.py         # LLM通信 + tool_use ループ
-├── tool_definitions.py   # ツール定義 + System Prompt
-├── tool_executor.py      # ツール実行（GUI Chat Protocol 核心）
-├── ros_client.py         # SCOUT ROS 通信クライアント
-├── interaction_log.py    # 構造化インタラクションログ
+├── app_flask.py          # Flask chat UI + GUI rendering (main entry)
+├── llm_client.py         # LLM communication + tool_use loop
+├── tool_definitions.py   # Tool definitions + System Prompt
+├── tool_executor.py      # Tool execution (GUI Chat Protocol core)
+├── ros_client.py         # SCOUT ROS communication client
+├── interaction_log.py    # Structured interaction logging
 ├── docs/
-│   ├── images/           # スクリーンショット
-│   └── api-reference.md  # SCOUT API リファレンス
+│   ├── images/           # Screenshots
+│   ├── api-reference.md  # SCOUT API reference
+│   └── README_ja.md      # Japanese README
+├── requirements.txt
 ├── LICENSE
 └── README.md
 ```
 
-## GUI Chat Protocol の設計パターン
+## GUI Chat Protocol Design Pattern
 
-本プロジェクトの核心は `tool_executor.py` にあります。各ツールが返すデータ構造：
+The core of this project is in `tool_executor.py`. Each tool returns this data structure:
 
 ```python
 def execute_tool(tool_name, tool_input):
-    # ... ツール実行 ...
+    # ... execute tool ...
     return {
-        "llm_text": "status=idle, battery=85%",    # LLMの思考材料
-        "gui_data": {                               # UIにパネル表示
-            "type": "status_panel",                 # パネル種別
-            "camera_image_b64": "...",              # base64画像
-            "odom": {"x": 1.2, "y": 4.5, ...},    # 構造化データ
+        "llm_text": "status=idle, battery=85%",    # Input for LLM reasoning
+        "gui_data": {                               # Rendered as UI panel
+            "type": "status_panel",                 # Panel type
+            "camera_image_b64": "...",              # base64 image
+            "odom": {"x": 1.2, "y": 4.5, ...},    # Structured data
         }
     }
 ```
 
-`gui_data.type` によってフロントエンドのレンダラが決まります：
+The `gui_data.type` determines which frontend renderer is used:
 
-| type | 表示内容 |
+| type | Display |
 |---|---|
-| `status_panel` | カメラ画像＋状態テーブル |
-| `action_result` | Before/After画像比較＋成否 |
-| `decision_form` | クリック可能な選択肢フォーム |
-| `route_list` | パトロールルート一覧 |
-| `patrol_started` | パトロール開始通知 |
-| `patrol_status` | パトロール進捗＋カメラ画像 |
-| `error` | エラー表示 |
+| `status_panel` | Camera image + status table |
+| `action_result` | Before/After image comparison + success/failure |
+| `decision_form` | Clickable decision form |
+| `route_list` | Patrol route list |
+| `patrol_started` | Patrol start notification |
+| `patrol_status` | Patrol progress + camera image |
+| `error` | Error display |
 
-**新しいツールの追加方法（3ステップ）:**
-1. `tool_definitions.py` にツール定義を追加
-2. `tool_executor.py` に `_exec_ツール名` メソッドを追加
-3. `app_flask.py` の JavaScript に `render` 関数を追加
+**Adding a new tool (3 steps):**
+1. Add tool definition to `tool_definitions.py`
+2. Add `_exec_toolname` method to `tool_executor.py`
+3. Add `render` function to JavaScript in `app_flask.py`
 
-LLM側の変更は不要です。
+No changes needed on the LLM side.
 
-## 他のロボットへの適用
+## Adapting to Other Robots
 
-このアーキテクチャは SCOUT 固有ではありません。`ros_client.py` を差し替えれば他のROSロボットにも適用できます：
+This architecture is not SCOUT-specific. Replace `ros_client.py` to adapt to other ROS robots:
 
 ```python
-# 例: TurtleBot3 用
+# Example: TurtleBot3
 class TurtleBot3ROSClient:
     def algo_move(self, y_distance, speed=0.15):
-        # cmd_vel に変換して publish
+        # Convert to cmd_vel and publish
         ...
     def get_camera_image_b64(self):
-        # /camera/rgb/image_raw を取得
+        # Subscribe to /camera/rgb/image_raw
         ...
 ```
 
-ROS以外のロボット（HTTP API、シリアル通信等）でも、同じインタフェースを実装すれば利用可能です。
+Non-ROS robots (HTTP API, serial, etc.) also work -- just implement the same interface.
 
-## 研究的背景
+## Research Context
 
-本システムは以下の研究課題に取り組んでいます：
+This system addresses the following research challenges:
 
-- **Mixed-Initiative Robot Operation**: 異常時にロボット・LLM・オペレータが協調して復帰
-- **Explainable Robot Operation**: テキスト生成ではなくUI提示で説明可能性を担保
-- **Structured Interaction Logging**: 人の介入をJSON形式で自動記録し評価可能に
+- **Mixed-Initiative Robot Operation**: Robot, LLM, and operator collaborate to recover from anomalies
+- **Explainable Robot Operation**: Explanation through UI presentation, not just text generation
+- **Structured Interaction Logging**: Human interventions are automatically recorded in JSON format for evaluation
 
-GUI Chat Protocol の詳細は [MulmoChat](https://github.com/receptron/MulmoChat) を参照してください。
+For more details on GUI Chat Protocol, see [MulmoChat](https://github.com/receptron/MulmoChat).
 
-## ライセンス
+## License
 
 MIT License
 
-## 謝辞
+## Acknowledgments
 
-- [MulmoChat / GUI Chat Protocol](https://github.com/receptron/MulmoChat) — UI提示プロトコルの着想元
-- [Moorebot Scout](https://www.moorebot.com/) — 対象ロボットプラットフォーム
-- [Anthropic Claude API](https://docs.anthropic.com/) — LLMバックエンド
+- [MulmoChat / GUI Chat Protocol](https://github.com/receptron/MulmoChat) -- Inspiration for the UI presentation protocol
+- [Moorebot Scout](https://www.moorebot.com/) -- Target robot platform
+- [Anthropic Claude API](https://docs.anthropic.com/) -- LLM backend
