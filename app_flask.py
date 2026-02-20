@@ -1,9 +1,11 @@
 ﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-app_flask.py 窶・SCOUT ﾃ・MulmoChat 繝√Ε繝・ヨUI・・lask迚医・霆ｽ驥擾ｼ・
-Gradio荳崎ｦ√１ython 3.8 + Flask 縺ｧ蜍穂ｽ懊・襍ｷ蜍・ ANTHROPIC_API_KEY=sk-... python3 app_flask.py --mock
-繝悶Λ繧ｦ繧ｶ: http://localhost:7860
+app_flask.py — SCOUT × MulmoChat チャットUI（Flask版・軽量）
+
+Gradio不要。Python 3.8 + Flask で動作。
+起動: ANTHROPIC_API_KEY=sk-... python3 app_flask.py --mock
+ブラウザ: http://localhost:7860
 """
 
 import argparse
@@ -17,18 +19,19 @@ import traceback
 try:
     from flask import Flask, request, jsonify, render_template_string
 except ImportError:
-    print("Flask 縺悟ｿ・ｦ√〒縺・ pip3 install flask")
+    print("Flask が必要です: pip3 install flask")
     sys.exit(1)
 
 # ============================================================
-# HTML 繝・Φ繝励Ξ繝ｼ繝茨ｼ・繝輔ぃ繧､繝ｫ縺ｫ蝓九ａ霎ｼ縺ｿ・・# ============================================================
+# HTML テンプレート（1ファイルに埋め込み）
+# ============================================================
 HTML_TEMPLATE = r"""
 <!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SCOUT ﾃ・MulmoChat</title>
+<title>SCOUT × MulmoChat</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body {
@@ -70,7 +73,7 @@ HTML_TEMPLATE = r"""
     border-bottom-left-radius: 4px;
   }
 
-  /* GUI 繝代ロ繝ｫ */
+  /* GUI パネル */
   .gui-panel {
     border: 1px solid #2d3748; border-radius: 8px;
     padding: 12px; margin: 8px 0; background: #0d1117;
@@ -109,7 +112,7 @@ HTML_TEMPLATE = r"""
   .decision-opt .opt-label { color: #38bdf8; font-weight: bold; }
   .decision-opt .opt-desc { color: #94a3b8; font-size: 0.78rem; }
 
-  /* 蜈･蜉帶ｬ・*/
+  /* 入力欄 */
   #input-area {
     background: #111827; border-top: 1px solid #1e2d3d;
     padding: 12px 20px; display: flex; gap: 8px;
@@ -136,15 +139,15 @@ HTML_TEMPLATE = r"""
 <body>
 
 <header>
-  <h1><span class="b">SCOUT</span> ﾃ・<span class="p">MulmoChat</span></h1>
-  <p>GUI Chat Protocol 窶・蟇ｾ隧ｱ蝙九Ο繝懊ャ繝磯°逕ｨ繧､繝ｳ繧ｿ繝輔ぉ繝ｼ繧ｹ</p>
+  <h1><span class="b">SCOUT</span> × <span class="p">MulmoChat</span></h1>
+  <p>GUI Chat Protocol — 対話型ロボット運用インタフェース</p>
 </header>
 
 <div id="chat-area"></div>
 
 <div id="input-area">
-  <input id="msg-input" type="text" placeholder="SCOUT縺ｸ縺ｮ謖・､ｺ繧貞・蜉・..・井ｾ・ 迥ｶ諷九ｒ隕九○縺ｦ・・ autocomplete="off" />
-  <button id="send-btn" onclick="sendMessage()">騾∽ｿ｡</button>
+  <input id="msg-input" type="text" placeholder="SCOUTへの指示を入力...（例: 状態を見せて）" autocomplete="off" />
+  <button id="send-btn" onclick="sendMessage()">送信</button>
 </div>
 
 <script>
@@ -172,12 +175,12 @@ function renderGuiData(gd) {
   if (gd.type === 'route_list') return renderRouteList(gd);
   if (gd.type === 'patrol_started') return renderPatrolStarted(gd);
   if (gd.type === 'patrol_status') return renderPatrolStatus(gd);
-  if (gd.type === 'error') return '<div class="gui-panel" style="border-color:#ef4444;color:#ef4444;">笞・・' + (gd.message||'Error') + '</div>';
+  if (gd.type === 'error') return '<div class="gui-panel" style="border-color:#ef4444;color:#ef4444;">⚠️ ' + (gd.message||'Error') + '</div>';
   return '';
 }
 
 function renderStatusPanel(d) {
-  let h = '<div class="gui-panel status"><div class="panel-title">藤 SCOUT Status</div>';
+  let h = '<div class="gui-panel status"><div class="panel-title">📡 SCOUT Status</div>';
   if (d.camera_image_b64) {
     h += '<img src="data:image/jpeg;base64,' + d.camera_image_b64 + '" />';
   }
@@ -188,7 +191,7 @@ function renderStatusPanel(d) {
     h += '<tr><td>Speed</td><td>' + d.odom.v_linear.toFixed(3) + ' m/s</td></tr>';
   }
   const moving = d.is_moving;
-  h += '<tr><td>State</td><td style="color:' + (moving ? '#ef4444' : '#34d399') + ';">' + (moving ? '遘ｻ蜍穂ｸｭ' : '蛛懈ｭ｢荳ｭ') + '</td></tr>';
+  h += '<tr><td>State</td><td style="color:' + (moving ? '#ef4444' : '#34d399') + ';">' + (moving ? '移動中' : '停止中') + '</td></tr>';
   h += '<tr><td>Nav</td><td>' + (d.nav_status_label || 'unknown') + '</td></tr>';
   h += '</table></div>';
   return h;
@@ -197,7 +200,7 @@ function renderStatusPanel(d) {
 function renderActionResult(d) {
   const ok = d.success;
   const cls = ok ? 'action' : 'action fail';
-  const icon = ok ? '笨・ : '笶・;
+  const icon = ok ? '✅' : '❌';
   let h = '<div class="gui-panel ' + cls + '"><div class="panel-title">' + icon + ' ' + (d.direction_label || d.action) + '</div>';
   if (d.before_image_b64 || d.after_image_b64) {
     h += '<div class="img-row">';
@@ -211,11 +214,11 @@ function renderActionResult(d) {
 }
 
 function renderDecisionForm(d) {
-  let h = '<div class="gui-panel decision"><div class="panel-title">､・' + d.question + '</div>';
+  let h = '<div class="gui-panel decision"><div class="panel-title">🤔 ' + d.question + '</div>';
   (d.options||[]).forEach(o => {
     h += '<div class="decision-opt" onclick="selectOption(\'' + o.id + '\')">';
     h += '<span class="opt-label">' + o.label + '</span>';
-    if (o.description) h += ' <span class="opt-desc">窶・' + o.description + '</span>';
+    if (o.description) h += ' <span class="opt-desc">— ' + o.description + '</span>';
     h += '</div>';
   });
   h += '</div>';
@@ -224,19 +227,19 @@ function renderDecisionForm(d) {
 
 function renderRouteList(d) {
   const routes = d.routes || [];
-  let h = '<div class="gui-panel" style="border-color:#818cf8;"><div class="panel-title" style="color:#818cf8;">搭 繝代ヨ繝ｭ繝ｼ繝ｫ繝ｫ繝ｼ繝井ｸ隕ｧ</div>';
+  let h = '<div class="gui-panel" style="border-color:#818cf8;"><div class="panel-title" style="color:#818cf8;">📋 パトロールルート一覧</div>';
   if (routes.length === 0) {
-    h += '<div style="color:#94a3b8;font-size:0.82rem;">逋ｻ骭ｲ貂医∩繝ｫ繝ｼ繝医′縺ゅｊ縺ｾ縺帙ｓ</div>';
+    h += '<div style="color:#94a3b8;font-size:0.82rem;">登録済みルートがありません</div>';
   } else {
     routes.forEach((r,i) => {
       h += '<div class="decision-opt" onclick="selectOption(\'' + r.name + '\')" style="cursor:pointer;">';
       h += '<span class="opt-label">' + r.name + '</span>';
-      h += ' <span class="opt-desc">窶・size: ' + r.size + '</span>';
+      h += ' <span class="opt-desc">— size: ' + r.size + '</span>';
       if (r.created) h += ' <span class="opt-desc">/ ' + r.created + '</span>';
       h += '</div>';
     });
   }
-  h += '<div style="color:#64748b;font-size:0.7rem;margin-top:6px;">繝ｫ繝ｼ繝亥錐繧偵け繝ｪ繝・け縺ｾ縺溘・縲娯雷笳九〒蟾｡蝗槭＠縺ｦ縲阪→蜈･蜉・/div>';
+  h += '<div style="color:#64748b;font-size:0.7rem;margin-top:6px;">ルート名をクリックまたは「○○で巡回して」と入力</div>';
   h += '</div>';
   return h;
 }
@@ -244,19 +247,19 @@ function renderRouteList(d) {
 function renderPatrolStarted(d) {
   const ok = d.success;
   const color = ok ? '#34d399' : '#ef4444';
-  const icon = ok ? '垳' : '笶・;
-  let h = '<div class="gui-panel" style="border-color:' + color + ';"><div class="panel-title" style="color:' + color + ';">' + icon + ' 繝代ヨ繝ｭ繝ｼ繝ｫ: ' + d.route_name + '</div>';
+  const icon = ok ? '🚶' : '❌';
+  let h = '<div class="gui-panel" style="border-color:' + color + ';"><div class="panel-title" style="color:' + color + ';">' + icon + ' パトロール: ' + d.route_name + '</div>';
   if (ok) {
-    h += '<div style="font-size:0.82rem;">繝代ヨ繝ｭ繝ｼ繝ｫ繧帝幕蟋九＠縺ｾ縺励◆縲ゅ悟ｷ｡蝗槭・迥ｶ豕√・・溘阪〒騾ｲ謐励ｒ遒ｺ隱阪〒縺阪∪縺吶・/div>';
+    h += '<div style="font-size:0.82rem;">パトロールを開始しました。「巡回の状況は？」で進捗を確認できます。</div>';
   } else {
-    h += '<div style="color:#ef4444;font-size:0.82rem;">髢句ｧ九↓螟ｱ謨励＠縺ｾ縺励◆: ' + (d.error || 'unknown') + '</div>';
+    h += '<div style="color:#ef4444;font-size:0.82rem;">開始に失敗しました: ' + (d.error || 'unknown') + '</div>';
   }
   h += '</div>';
   return h;
 }
 
 function renderPatrolStatus(d) {
-  let h = '<div class="gui-panel" style="border-color:#38bdf8;"><div class="panel-title" style="color:#38bdf8;">垳 繝代ヨ繝ｭ繝ｼ繝ｫ迥ｶ諷・/div>';
+  let h = '<div class="gui-panel" style="border-color:#38bdf8;"><div class="panel-title" style="color:#38bdf8;">🚶 パトロール状態</div>';
   if (d.camera_image_b64) {
     h += '<img src="data:image/jpeg;base64,' + d.camera_image_b64 + '" style="max-width:100%;border-radius:4px;margin:4px 0;" />';
   }
@@ -286,7 +289,7 @@ async function sendMessage() {
   // loading
   const loadDiv = document.createElement('div');
   loadDiv.className = 'msg assistant';
-  loadDiv.innerHTML = '<div class="bubble loading">閠・∴荳ｭ...</div>';
+  loadDiv.innerHTML = '<div class="bubble loading">考え中...</div>';
   chatArea.appendChild(loadDiv);
   chatArea.scrollTop = chatArea.scrollHeight;
 
@@ -301,16 +304,16 @@ async function sendMessage() {
     chatArea.removeChild(loadDiv);
 
     if (data.error) {
-      addMessage('assistant', '<span style="color:#ef4444;">笞・・' + escapeHtml(data.error) + '</span>');
+      addMessage('assistant', '<span style="color:#ef4444;">⚠️ ' + escapeHtml(data.error) + '</span>');
     } else {
       let html = '';
       (data.gui_data_list || []).forEach(gd => { html += renderGuiData(gd); });
       if (data.text) html += '<div>' + escapeHtml(data.text).replace(/\n/g, '<br>') + '</div>';
-      addMessage('assistant', html || '(蠢懃ｭ斐↑縺・');
+      addMessage('assistant', html || '(応答なし)');
     }
   } catch (e) {
     chatArea.removeChild(loadDiv);
-    addMessage('assistant', '<span style="color:#ef4444;">笞・・騾壻ｿ｡繧ｨ繝ｩ繝ｼ: ' + e.message + '</span>');
+    addMessage('assistant', '<span style="color:#ef4444;">⚠️ 通信エラー: ' + e.message + '</span>');
   }
 
   sendBtn.disabled = false;
@@ -449,13 +452,13 @@ def main():
 
     if not os.environ.get("ANTHROPIC_API_KEY"):
         print("=" * 50)
-        print("ERROR: ANTHROPIC_API_KEY 縺梧悴險ｭ螳壹〒縺・)
-        print("  export ANTHROPIC_API_KEY=<YOUR_ANTHROPIC_API_KEY>")
+        print("ERROR: ANTHROPIC_API_KEY が未設定です")
+        print("  export ANTHROPIC_API_KEY=sk-ant-...")
         print("=" * 50)
         return
 
     app = create_app(use_mock=args.mock)
-    print(f"\n  竊・繝悶Λ繧ｦ繧ｶ縺ｧ http://localhost:{args.port} 繧帝幕縺・※縺上□縺輔＞\n")
+    print(f"\n  → ブラウザで http://localhost:{args.port} を開いてください\n")
     app.run(host="0.0.0.0", port=args.port, debug=False)
 
 
